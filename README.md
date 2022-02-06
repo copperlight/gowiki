@@ -8,3 +8,11 @@ Tutorial:
 * Spruce up the page templates by making them valid HTML and adding some CSS rules.
 * Implement inter-page linking by converting instances of `[PageName]` to
 `<a href="/view/PageName">PageName</a>`. (hint: you could use `regexp.ReplaceAllFunc` to do this).
+
+## Local Development
+
+```bash
+go build wiki.go
+./wiki
+open http://localhost:8080
+```

@@ -13,11 +13,24 @@ type Page struct {
 	Body  []byte
 }
 
-var dataRoot = "./data/"
+var dataRoot = "data/"
 
 func (p *Page) save() error {
 	filename := dataRoot + p.Title + ".txt"
 	return os.WriteFile(filename, p.Body, 0600)
+}
+
+// this should match validPath parsing
+var linkFormat = regexp.MustCompile(`\[[a-zA-Z0-9]+\]`)
+
+func (p Page) linkPages() *Page {
+	formatted := linkFormat.ReplaceAllFunc(p.Body, func(link []byte) []byte {
+		title := string(link[1 : len(link)-1])
+		newLink := `<a href="/view/` + title + `">` + title + "</a>"
+		return []byte(newLink)
+	})
+
+	return &Page{Title: p.Title, Body: formatted}
 }
 
 func loadPage(title string) (*Page, error) {
@@ -29,20 +42,8 @@ func loadPage(title string) (*Page, error) {
 	return &Page{Title: title, Body: body}, nil
 }
 
-func indexHandler(w http.ResponseWriter, r *http.Request) {
-	p := &Page{Title: "index"}
-	renderTemplate(w, "index", p)
-}
-
-func cssHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := os.ReadFile("./tmpl/styles.css")
-	if err != nil {
-		http.Error(w, "styles.css not found", http.StatusNotFound)
-		return
-	}
-	// setting the content-type is necessary for external css to load correctly
-	w.Header().Set("Content-Type", "text/css")
-	w.Write(body)
+func frontPageHandler(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/view/FrontPage", http.StatusFound)
 }
 
 func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
@@ -51,7 +52,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
 		http.Redirect(w, r, "/edit/"+title, http.StatusFound)
 		return
 	}
-	renderTemplate(w, "view", p)
+	renderTemplate(w, "view", p.linkPages())
 }
 
 func editHandler(w http.ResponseWriter, r *http.Request, title string) {
@@ -79,7 +80,7 @@ func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
 var templates = template.Must(template.New("main").Funcs(template.FuncMap{
 	"safeHTML": func(b []byte) template.HTML {
 		return template.HTML(b)
-	}}).ParseGlob("./tmpl/*.html"))
+	}}).ParseGlob("tmpl/*.html"))
 
 func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
 	err := templates.ExecuteTemplate(w, tmpl+".html", p)
@@ -102,10 +103,15 @@ func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.Handl
 }
 
 func main() {
-	http.HandleFunc("/", indexHandler)
-	http.HandleFunc("/styles.css", cssHandler)
+	fileServer := http.FileServer(http.Dir("static"))
+	// the favicon handler is added to avoid falling back to the front page on every page load
+	http.Handle("/favicon.ico", http.StripPrefix("/", fileServer))
+	http.Handle("/styles.css", http.StripPrefix("/", fileServer))
+
+	http.HandleFunc("/", frontPageHandler)
 	http.HandleFunc("/view/", makeHandler(viewHandler))
 	http.HandleFunc("/edit/", makeHandler(editHandler))
 	http.HandleFunc("/save/", makeHandler(saveHandler))
+
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
